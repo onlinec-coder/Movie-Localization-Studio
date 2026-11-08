@@ -82,6 +82,10 @@ export default function App() {
   const [subtitleMode, setSubtitleMode] = useState<'off' | 'en' | 'mn' | 'both'>('both');
   const videoRef = useRef<HTMLVideoElement>(null);
   const current = project.turns[active];
+  const nextTurn = project.turns[active + 1];
+  // Subtitle cues can end before the spoken line does. Keep playback running
+  // until at least the next turn begins, while respecting a later cue end.
+  const currentStopTime = current ? Math.max(current.end, nextTurn?.start ?? current.end) : 0;
   const confirmed = project.turns.filter(t => FIELD_KEYS.every(k => ['confirmed','corrected','not_applicable'].includes(fieldState(t,k).status))).length;
 
   const update = (patch: Partial<Project>) => setProject(p => ({
@@ -169,23 +173,32 @@ export default function App() {
     const v = videoRef.current;
     if (!v || !current) return;
     const stopAtTurnEnd = () => {
-      if (v.currentTime >= current.end) { v.pause(); setPlaying(false); }
+      if (!v.paused && v.currentTime >= currentStopTime - 0.08) {
+        v.pause();
+        setPlaying(false);
+      }
     };
     v.addEventListener('timeupdate', stopAtTurnEnd);
     return () => v.removeEventListener('timeupdate', stopAtTurnEnd);
-  }, [current]);
+  }, [current, currentStopTime]);
 
+  const playCurrentTurn = (restart: boolean) => {
+    const v = videoRef.current;
+    if (!v || !current) return;
+    if (restart || v.currentTime < current.start || v.currentTime >= currentStopTime) {
+      v.currentTime = current.start;
+    }
+    void v.play().catch(() => setStatus('Видео тоглуулах боломжгүй байна / Could not start video playback'));
+  };
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v || !current) return;
-    if (v.paused) {
-      if (v.currentTime < current.start || v.currentTime >= current.end) v.currentTime = current.start;
-      void v.play();
-    } else v.pause();
+    if (v.paused) playCurrentTurn(false);
+    else v.pause();
   };
   const seek = (delta: number) => {
     const v = videoRef.current;
-    if (v && current) v.currentTime = Math.min(current.end, Math.max(current.start, v.currentTime + delta));
+    if (v && current) v.currentTime = Math.min(currentStopTime, Math.max(current.start, v.currentTime + delta));
   };
   const confirmNext = () => {
     if (!current) return;
@@ -366,6 +379,8 @@ export default function App() {
           </div>}
         </div>
         <div className="controls"><button onClick={() => seek(-3)}>−3s</button><button className="primary" onClick={togglePlay}>{playing ? 'Зогсоох / Pause' : 'Тоглуулах / Play'}</button><button onClick={() => seek(3)}>+3s</button>
+          <button onClick={() => playCurrentTurn(false)} disabled={!current}>Яриаг дуустал / Play turn</button>
+          <button onClick={() => playCurrentTurn(true)} disabled={!current}>Дахин сонсох / Replay</button>
           <label className="subtitle-choice">Хадмал
             <select value={subtitleMode} onChange={e => setSubtitleMode(e.target.value as 'off' | 'en' | 'mn' | 'both')}>
               <option value="off">Унтраах</option><option value="en">English</option><option value="mn">Монгол</option><option value="both">Хоёуланг нь</option>
