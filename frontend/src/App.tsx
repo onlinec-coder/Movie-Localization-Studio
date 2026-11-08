@@ -252,6 +252,45 @@ export default function App() {
     setStatus('Imported ' + cues.length + ' ' + language.toUpperCase() + ' subtitle cues');
   };
 
+  const importSpeakerAssignments = async (file?: File) => {
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data.assignments)) throw new Error('assignments array missing');
+      const byId = new Map<string, any>(data.assignments.map((item: any) => [String(item.subtitle_id), item]));
+      let matched = 0, protectedCount = 0;
+      setProject(p => {
+        const speakerMap = new Map(p.speakers.map(s => [s.id, s.name]));
+        const turns = p.turns.map(turn => {
+          const proposal = byId.get(String(turn.id));
+          if (!proposal) return turn;
+          matched++;
+          const proposedSpeaker = proposal.speaker_id ? String(proposal.speaker_id) : 'unknown';
+          const proposedName = String(proposal.speaker_name || (proposedSpeaker === 'unknown' ? 'Тодорхойгүй / Unknown' : proposedSpeaker));
+          if (proposedSpeaker !== 'unknown') speakerMap.set(proposedSpeaker, proposedName);
+          const oldSpeaker = fieldState(turn, 'speaker');
+          const oldRole = fieldState(turn, 'role');
+          const keepSpeaker = ['confirmed','corrected'].includes(oldSpeaker.status);
+          const keepRole = ['confirmed','corrected'].includes(oldRole.status);
+          if (keepSpeaker || keepRole) protectedCount++;
+          const rawType = String(proposal.speaker_type || 'unknown');
+          const proposedRole = rawType === 'inner_monologue' ? 'inner_monologue' : rawType === 'narrator' ? 'narration' : rawType === 'unknown' ? 'unknown' : 'dialogue';
+          return {
+            ...turn, speaker: keepSpeaker ? turn.speaker : proposedSpeaker, role: keepRole ? turn.role : proposedRole,
+            fieldStates: { ...turn.fieldStates,
+              speaker: keepSpeaker ? oldSpeaker : { aiProposal: proposedSpeaker, finalValue: proposedSpeaker, status: 'ai_suggested' as AnnotationStatus },
+              role: keepRole ? oldRole : { aiProposal: proposedRole, finalValue: proposedRole, status: 'ai_suggested' as AnnotationStatus },
+            }, confirmed: false,
+          };
+        });
+        return { ...p, turns, speakers: [...speakerMap].map(([id,name]) => ({id,name})), updatedAt: new Date().toISOString() };
+      });
+      setStatus(`Яригчийн санал импортлов: ${matched} таарсан / matched; ${protectedCount} хүний шийдвэр хадгалагдсан / preserved`);
+    } catch {
+      setStatus('JSON бүтэц буруу байна. speaker_assignments.json файлаа шалгана уу / Invalid speaker assignment JSON');
+    }
+  };
+
   const addSpeaker = () => {
     const n = project.speakers.length + 1;
     update({ speakers: [...project.speakers, { id: 'C' + String(n).padStart(3, '0'), name: 'Speaker ' + n }] });
@@ -292,8 +331,9 @@ export default function App() {
         <button className="speaker" onClick={() => patchTurn({ speaker: 'unknown' })}>Тодорхойгүй / дэлгэцээс гадуур <kbd>U</kbd></button>
         <h3>ФАЙЛ ОРУУЛАХ / IMPORT</h3>
         <label className="file">Видео / Video (дотоодод хадгална)<input type="file" accept="video/*" onChange={e => void importVideo(e.target.files?.[0])} /></label>
-        <label className="file">Англи хадмал / Англи хадмал / English SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'en')} /></label>
-        <label className="file">Монгол хадмал / Монгол хадмал / Mongolian SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'mn')} /></label>
+        <label className="file">Англи хадмал / English SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'en')} /></label>
+        <label className="file">Монгол хадмал / Mongolian SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'mn')} /></label>
+        <label className="file">Яригчийн AI шинжилгээ / Speaker assignments JSON<input type="file" accept=".json,application/json" onChange={e => void importSpeakerAssignments(e.target.files?.[0])} /></label>
         <p className="muted">{project.videoName}</p>
       </aside>
       <section className="center">
