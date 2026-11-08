@@ -13,38 +13,70 @@ PROJECTS = DATA / 'projects'
 MEDIA = DATA / 'media'
 PROJECTS.mkdir(parents=True, exist_ok=True)
 MEDIA.mkdir(parents=True, exist_ok=True)
-app = FastAPI(title='Movie Localization Studio API', version='0.1.0')
-app.add_middleware(CORSMiddleware, allow_origins=['http://127.0.0.1:5173','http://localhost:5173'], allow_methods=['*'], allow_headers=['*'])
+app = FastAPI(title='Movie Localization Studio API', version='0.2.0')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['http://127.0.0.1:5173', 'http://localhost:5173'],
+    allow_methods=['GET', 'PUT', 'POST', 'DELETE', 'OPTIONS'],
+    allow_headers=['*'],
+)
 app.mount('/media', StaticFiles(directory=MEDIA), name='media')
+
 class ProjectPayload(BaseModel):
     project: dict[str, Any]
+
 def valid_id(value: str) -> str:
-    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', value): raise HTTPException(400, 'Invalid project id')
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', value):
+        raise HTTPException(400, 'Invalid project id')
     return value
+
 @app.get('/api/health')
-def health(): return {'status':'ok','storage':'local','ai_enabled':False}
+def health():
+    return {'status': 'ok', 'storage': 'local', 'ai_enabled': False}
+
 @app.get('/api/projects')
 def list_projects():
-    result=[]
-    for p in PROJECTS.glob('*.json'):
+    result = []
+    for path in PROJECTS.glob('*.json'):
         try:
-            d=json.loads(p.read_text(encoding='utf-8')); result.append({'id':p.stem,'title':d.get('title',p.stem),'updatedAt':d.get('updatedAt')})
-        except (OSError,json.JSONDecodeError): pass
-    return {'projects':sorted(result,key=lambda x:x.get('updatedAt') or '',reverse=True)}
+            data = json.loads(path.read_text(encoding='utf-8'))
+            result.append({'id': path.stem, 'title': data.get('title', path.stem), 'updatedAt': data.get('updatedAt')})
+        except (OSError, json.JSONDecodeError):
+            continue
+    return {'projects': sorted(result, key=lambda item: item.get('updatedAt') or '', reverse=True)}
+
 @app.get('/api/projects/{project_id}')
 def get_project(project_id: str):
-    p=PROJECTS/(valid_id(project_id)+'.json')
-    if not p.exists(): raise HTTPException(404,'Project not found')
-    return json.loads(p.read_text(encoding='utf-8'))
+    path = PROJECTS / (valid_id(project_id) + '.json')
+    if not path.exists():
+        raise HTTPException(404, 'Project not found')
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except json.JSONDecodeError:
+        raise HTTPException(500, 'Saved project JSON is damaged')
+
 @app.put('/api/projects/{project_id}')
 def save_project(project_id: str, payload: ProjectPayload):
-    pid=valid_id(project_id); data=payload.project; data['id']=pid
-    (PROJECTS/(pid+'.json')).write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
-    return {'saved':True,'id':pid}
+    pid = valid_id(project_id)
+    data = payload.project
+    data['id'] = pid
+    target = PROJECTS / (pid + '.json')
+    temporary = PROJECTS / (pid + '.json.tmp')
+    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.replace(target)
+    return {'saved': True, 'id': pid}
+
 @app.post('/api/media')
 async def upload_media(file: UploadFile = File(...)):
-    suffix=Path(file.filename or '').suffix.lower()
-    if suffix not in {'.mp4','.mkv','.mov','.avi','.webm','.mp3','.wav','.m4a'}: raise HTTPException(400,'Unsupported media type')
-    name=uuid.uuid4().hex+suffix
-    with (MEDIA/name).open('wb') as out: shutil.copyfileobj(file.file,out)
-    return {'filename':file.filename,'url':'/media/'+name}
+    suffix = Path(file.filename or '').suffix.lower()
+    if suffix not in {'.mp4', '.mkv', '.mov', '.avi', '.webm'}:
+        raise HTTPException(400, 'Unsupported video type')
+    name = uuid.uuid4().hex + suffix
+    target = MEDIA / name
+    try:
+        with target.open('wb') as output:
+            shutil.copyfileobj(file.file, output)
+    except OSError:
+        target.unlink(missing_ok=True)
+        raise HTTPException(507, 'Could not store video on local disk')
+    return {'filename': file.filename, 'url': '/media/' + name}
