@@ -55,3 +55,14 @@ All project JSON and video files are stored locally under `backend/local_data/`.
 - The current queue begins with subtitle cues; it does not yet automatically infer true speech turns. Use split/merge during review.
 - AI speaker, emotion, and voice proposals are not implemented yet.
 - Test with copies of source media first and keep independent backups.
+
+
+## Field-level turn annotation
+
+The TURN ANNOTATION panel now reviews eight fields independently: speaker, role, emotion, delivery, speaking speed, voice characteristics, emphasis, and pauses/breaths. Each field keeps its AI proposal, final value, and human review status separately. A field can be confirmed, corrected, marked not applicable, or left for review. Speaker and role are required; use the explicit Unknown speaker option when identity cannot be established.
+
+The interface is bilingual (Mongolian / English), including field labels, status actions, and common annotation choices.
+
+Import `speaker_assignments.json` after importing the matching SRT. Assignments are matched by exact `subtitle_id`; unmatched IDs are not guessed. Existing human-confirmed or human-corrected speaker and role choices are protected from imported AI proposals. The other annotation dimensions remain awaiting review until an AI analysis provider is connected.
+
+See [Turn Annotation Data Model](docs/TURN_ANNOTATION_SCHEMA.md) for the JSON schema and migration behavior.
