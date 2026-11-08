@@ -268,7 +268,16 @@ export default function App() {
     try {
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.assignments)) throw new Error('assignments array missing');
+      const expectedCount = Number(data.movie?.total_subtitles || data.assignments.length);
+      if (expectedCount !== project.turns.length || data.assignments.length !== project.turns.length) {
+        setStatus(`Хадмал ба JSON-ийн cue тоо зөрж байна (${project.turns.length} vs ${expectedCount}). Зөв хувилбарын файлуудыг сонгоно уу / Subtitle and JSON cue counts do not match`);
+        return;
+      }
       const byId = new Map<string, any>(data.assignments.map((item: any) => [String(item.subtitle_id), item]));
+      if (byId.size !== data.assignments.length || !project.turns.every(turn => byId.has(String(turn.id)))) {
+        setStatus('Subtitle ID-ууд бүрэн таарахгүй байна. Импорт зогсоолоо / Subtitle IDs do not match; import stopped');
+        return;
+      }
       let matched = 0, protectedCount = 0;
       setProject(p => {
         const speakerMap = new Map(p.speakers.map(s => [s.id, s.name]));
