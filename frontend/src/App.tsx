@@ -13,6 +13,7 @@ type Speaker = { id: string; name: string };
 type Project = {
   id: string; title: string; updatedAt: string; videoUrl: string;
   videoName: string; speakers: Speaker[]; turns: Turn[]; currentTurn: number;
+  sourceFiles?: { video?: string; english_srt?: string; mongolian_srt?: string; speaker_assignments?: string };
 };
 const API = 'http://127.0.0.1:8000';
 const FIELD_LABELS: Record<AnnotationKey, string> = {
@@ -117,36 +118,102 @@ export default function App() {
     if (v) { v.currentTime = project.turns[index].start; v.pause(); setPlaying(false); }
   };
 
-  // Restore the last saved project automatically when the local API starts.
+  // Restore a saved project; if this is a fresh/empty workspace, load the local test preset.
   useEffect(() => {
     let alive = true;
-    fetch(API + '/api/health').then(r => {
-      if (!r.ok) throw new Error('API unavailable');
-      return r.json();
-    }).then(() => {
-      if (!alive) return;
-      setApiReady(true);
-      return fetch(API + '/api/projects/local-project');
-    }).then(r => {
-      if (!r || !r.ok) return null;
-      return r.json();
-    }).then(saved => {
-      if (!alive) return;
-      if (saved) {
-        const restored: Project = { ...blankProject(), ...saved };
-        setProject(restored);
-        setActive(Math.min(restored.currentTurn || 0, Math.max(0, restored.turns.length - 1)));
-        setVideoSrc(restored.videoUrl ? API + restored.videoUrl : '');
-        setStatus('Previous project restored from this computer');
-      } else {
-        setStatus('Local storage ready — import your movie and subtitles');
+    const restore = async () => {
+      try {
+        const health = await fetch(API + '/api/health');
+        if (!health.ok) throw new Error('API unavailable');
+        if (!alive) return;
+        setApiReady(true);
+        const savedResponse = await fetch(API + '/api/projects/local-project');
+        const saved = savedResponse.ok ? await savedResponse.json() : null;
+        if (!alive) return;
+
+        if (saved && (saved.turns?.length || saved.videoUrl)) {
+          const restored: Project = { ...blankProject(), ...saved };
+          setProject(restored);
+          setActive(Math.min(restored.currentTurn || 0, Math.max(0, restored.turns.length - 1)));
+          setVideoSrc(restored.videoUrl.startsWith('/api/test-preset/')
+            ? API + restored.videoUrl
+            : restored.videoUrl ? API + restored.videoUrl : '');
+          setStatus('Өмнөх төсөл сэргээгдлээ / Previous project restored');
+        } else {
+          try {
+            const presetResponse = await fetch(API + '/api/test-preset');
+            if (!presetResponse.ok) throw new Error('Test preset is not configured');
+            const preset = await presetResponse.json();
+            const enCues = parseSrt(preset.englishSrt || '');
+            const mnCues = parseSrt(preset.mongolianSrt || '');
+            if (!enCues.length || !mnCues.length) throw new Error('SRT files contain no valid cues');
+
+            const mnByStart = new Map(mnCues.map(c => [Math.round(c.start * 10), c]));
+            const turns: Turn[] = enCues.map((cue, index) => {
+              const matchedMn = mnByStart.get(Math.round(cue.start * 10))
+                || (enCues.length === mnCues.length ? mnCues[index] : undefined);
+              return {
+                id: cue.id, start: cue.start, end: cue.end, en: cue.text, mn: matchedMn?.text || '',
+                speaker: '', role: 'dialogue', emotion: '', delivery: '', speed: 'normal',
+                voice: '', emphasis: '', pauses: '', notes: '', confirmed: false,
+              };
+            });
+
+            const assignmentData = preset.speakerAssignments;
+            const assignments = Array.isArray(assignmentData?.assignments) ? assignmentData.assignments : [];
+            const declaredCount = Number(assignmentData?.movie?.total_subtitles || assignments.length);
+            const speakerMap = new Map<string, string>();
+            let imported = 0;
+            let assignmentWarning = '';
+            if (assignments.length && declaredCount === turns.length && assignments.length === turns.length) {
+              const byId = new Map(assignments.map((item: any) => [String(item.subtitle_id), item]));
+              if (byId.size === assignments.length && turns.every(turn => byId.has(String(turn.id)))) {
+                turns.forEach(turn => {
+                  const item: any = byId.get(String(turn.id));
+                  const speakerId = item.speaker_id ? String(item.speaker_id) : 'unknown';
+                  const speakerName = String(item.speaker_name || speakerId);
+                  if (speakerId !== 'unknown') speakerMap.set(speakerId, speakerName);
+                  const type = String(item.speaker_type || 'unknown');
+                  const role = type === 'inner_monologue' ? 'inner_monologue'
+                    : type === 'narrator' ? 'narration' : type === 'unknown' ? 'unknown' : 'dialogue';
+                  turn.speaker = speakerId;
+                  turn.role = role;
+                  turn.fieldStates = {
+                    speaker: { aiProposal: speakerId, finalValue: speakerId, status: 'ai_suggested' },
+                    role: { aiProposal: role, finalValue: role, status: 'ai_suggested' },
+                  };
+                  imported++;
+                });
+              } else assignmentWarning = 'Яригчийн JSON ID таарахгүй тул алгасав / Speaker JSON IDs did not match';
+            } else if (assignments.length) {
+              assignmentWarning = `Яригчийн JSON cue тоо зөрүүтэй (${turns.length} / ${declaredCount}); алгасав / count mismatch; skipped`;
+            }
+
+            const restored: Project = {
+              ...blankProject(), title: preset.title || 'Husbands', videoUrl: preset.videoUrl,
+              videoName: preset.videoName || 'Husbands.mp4',
+              sourceFiles: preset.paths || {}, speakers: [...speakerMap].map(([id, name]) => ({ id, name })),
+              turns, currentTurn: 0,
+            };
+            setProject(restored);
+            setActive(0);
+            setVideoSrc(API + preset.videoUrl);
+            const subtitleNote = enCues.length === mnCues.length
+              ? `${enCues.length} EN/MN cue`
+              : `${enCues.length} EN, ${mnCues.length} MN cue; unmatched Mongolian cues are blank`;
+            setStatus(`Husbands тест файлууд автоматаар ачааллаа / Loaded: ${subtitleNote}; ${imported} speaker proposals. ${assignmentWarning}`);
+          } catch {
+            setStatus('Local storage ready — test preset not configured or files unavailable; import files manually');
+          }
+        }
+        setLoaded(true);
+      } catch {
+        if (!alive) return;
+        setStatus('Local API is not running — start it to enable autosave and resume');
+        setLoaded(true);
       }
-      setLoaded(true);
-    }).catch(() => {
-      if (!alive) return;
-      setStatus('Local API is not running — start it to enable autosave and resume');
-      setLoaded(true);
-    });
+    };
+    void restore();
     return () => { alive = false; };
   }, []);
 
@@ -363,10 +430,10 @@ export default function App() {
         {project.speakers.map((s, i) => <button className="speaker" key={s.id} onClick={() => patchTurn({ speaker: s.id })}>{s.name} <kbd>{i + 1}</kbd></button>)}
         <button className="speaker" onClick={() => patchTurn({ speaker: 'unknown' })}>Тодорхойгүй / дэлгэцээс гадуур <kbd>U</kbd></button>
         <h3>ФАЙЛ ОРУУЛАХ / IMPORT</h3>
-        <label className="file">Видео / Video (дотоодод хадгална)<input type="file" accept="video/*" onChange={e => void importVideo(e.target.files?.[0])} /></label>
-        <label className="file">Англи хадмал / English SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'en')} /></label>
-        <label className="file">Монгол хадмал / Mongolian SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'mn')} /></label>
-        <label className="file">Яригчийн AI шинжилгээ / Speaker assignments JSON<input type="file" accept=".json,application/json" onChange={e => void importSpeakerAssignments(e.target.files?.[0])} /></label>
+        <label className="file">Видео / Video (дотоодод хадгална)<input type="file" accept="video/*" onChange={e => void importVideo(e.target.files?.[0])} />{project.sourceFiles?.video && <small className="configured-path">{project.sourceFiles.video}</small>}</label>
+        <label className="file">Англи хадмал / English SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'en')} />{project.sourceFiles?.english_srt && <small className="configured-path">{project.sourceFiles.english_srt}</small>}</label>
+        <label className="file">Монгол хадмал / Mongolian SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'mn')} />{project.sourceFiles?.mongolian_srt && <small className="configured-path">{project.sourceFiles.mongolian_srt}</small>}</label>
+        <label className="file">Яригчийн AI шинжилгээ / Speaker assignments JSON<input type="file" accept=".json,application/json" onChange={e => void importSpeakerAssignments(e.target.files?.[0])} />{project.sourceFiles?.speaker_assignments && <small className="configured-path">{project.sourceFiles.speaker_assignments}</small>}</label>
         <p className="muted">{project.videoName}</p>
       </aside>
       <section className="center">
