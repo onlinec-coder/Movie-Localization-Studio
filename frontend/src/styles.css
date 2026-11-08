@@ -9,3 +9,5 @@
 .status-confirmed{color:#72d6a3}.status-corrected{color:#8ab9ff}.status-not_applicable{color:#aab6c8}.status-needs_review{color:#f0bd6c}.status-ai_suggested{color:#c4a5ff}
 .inspector{max-height:calc(100vh - 120px);overflow:auto}
 @media(max-width:1000px){.inspector{max-height:none}}
+
+.configured-path{display:block;max-width:100%;margin-top:5px;color:var(--muted,#8792a2);font-size:10px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}
