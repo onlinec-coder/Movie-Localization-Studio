@@ -5,12 +5,14 @@ from typing import Any
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'local_data'
 PROJECTS = DATA / 'projects'
 MEDIA = DATA / 'media'
+SETTINGS_FILE = ROOT / 'local_settings.json'
 PROJECTS.mkdir(parents=True, exist_ok=True)
 MEDIA.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title='Movie Localization Studio API', version='0.2.0')
@@ -29,6 +31,57 @@ def valid_id(value: str) -> str:
     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', value):
         raise HTTPException(400, 'Invalid project id')
     return value
+
+def load_test_preset() -> dict[str, Any]:
+    if not SETTINGS_FILE.exists():
+        raise HTTPException(404, 'Local test preset is not configured')
+    try:
+        settings = json.loads(SETTINGS_FILE.read_text(encoding='utf-8'))
+        preset = settings.get('test_preset', settings)
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(500, 'Local test preset configuration is invalid')
+    required = ('video', 'english_srt', 'mongolian_srt', 'speaker_assignments')
+    paths: dict[str, Path] = {}
+    for key in required:
+        value = preset.get(key)
+        if not value:
+            raise HTTPException(400, f'Missing test preset path: {key}')
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = (ROOT / path).resolve()
+        if not path.is_file():
+            raise HTTPException(404, f'Test preset file not found: {key}')
+        paths[key] = path
+    return {'settings': preset, 'paths': paths}
+
+
+@app.get('/api/test-preset')
+def get_test_preset():
+    loaded = load_test_preset()
+    paths = loaded['paths']
+    try:
+        english = paths['english_srt'].read_text(encoding='utf-8-sig')
+        mongolian = paths['mongolian_srt'].read_text(encoding='utf-8-sig')
+        assignments = json.loads(paths['speaker_assignments'].read_text(encoding='utf-8-sig'))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, f'Could not read test preset files: {exc}')
+    return {
+        'title': str(loaded['settings'].get('title') or 'Husbands'),
+        'videoName': paths['video'].name,
+        'videoUrl': '/api/test-preset/video',
+        'paths': {key: str(path) for key, path in paths.items()},
+        'englishSrt': english,
+        'mongolianSrt': mongolian,
+        'speakerAssignments': assignments,
+    }
+
+
+@app.get('/api/test-preset/video')
+def get_test_preset_video():
+    loaded = load_test_preset()
+    video = loaded['paths']['video']
+    return FileResponse(video, media_type='video/mp4', filename=video.name)
+
 
 @app.get('/api/health')
 def health():
