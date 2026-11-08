@@ -82,6 +82,8 @@ export default function App() {
   }));
   const setFieldStatus = (key: AnnotationKey, status: AnnotationStatus) => {
     if (!current) return;
+    if (status === 'not_applicable' && (key === 'speaker' || key === 'role')) { setStatus('Яригч болон дүрийн төрөл заавал тодорхойлогдоно / Speaker and role are required'); return; }
+    if (status === 'confirmed' && !legacyValue(current, key).trim()) { setStatus('Эхлээд утга сонгоно уу / Select a value before confirming'); return; }
     const previous = fieldState(current, key);
     const nextState: FieldState = { ...previous, status, finalValue: status === 'not_applicable' ? null : previous.finalValue };
     patchTurn({ fieldStates: { ...current.fieldStates, [key]: nextState }, confirmed: false });
@@ -287,11 +289,11 @@ export default function App() {
         <p>{project.turns.length} ярианы хэсэг / turns · {confirmed} бүрэн баталгаажсан / complete</p>
         <h3>ЯРИГЧИД / SPEAKERS <button onClick={addSpeaker}>＋</button></h3>
         {project.speakers.map((s, i) => <button className="speaker" key={s.id} onClick={() => patchTurn({ speaker: s.id })}>{s.name} <kbd>{i + 1}</kbd></button>)}
-        <button className="speaker" onClick={() => patchTurn({ speaker: 'unknown' })}>Unknown / off-screen <kbd>U</kbd></button>
+        <button className="speaker" onClick={() => patchTurn({ speaker: 'unknown' })}>Тодорхойгүй / дэлгэцээс гадуур <kbd>U</kbd></button>
         <h3>ФАЙЛ ОРУУЛАХ / IMPORT</h3>
         <label className="file">Видео / Video (дотоодод хадгална)<input type="file" accept="video/*" onChange={e => void importVideo(e.target.files?.[0])} /></label>
-        <label className="file">Англи хадмал / English SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'en')} /></label>
-        <label className="file">Монгол хадмал / Mongolian SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'mn')} /></label>
+        <label className="file">Англи хадмал / Англи хадмал / English SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'en')} /></label>
+        <label className="file">Монгол хадмал / Монгол хадмал / Mongolian SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'mn')} /></label>
         <p className="muted">{project.videoName}</p>
       </aside>
       <section className="center">
