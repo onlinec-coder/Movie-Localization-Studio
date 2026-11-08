@@ -27,6 +27,17 @@ const STATUS_LABELS: Record<AnnotationStatus, string> = {
   needs_review: 'Шалгах шаардлагатай / Needs review',
 };
 const FIELD_KEYS: AnnotationKey[] = ['speaker','role','emotion','delivery','speed','voice','emphasis','pauses'];
+const OPTION_LABELS: Record<string,string> = {
+  dialogue:'Харилцан яриа / Dialogue', narration:'Өгүүлэгчийн хүүрнэл / Narration',
+  inner_monologue:'Дотоод бодол / Inner monologue', voice_over:'Дуу оруулалт / Voice-over', unknown:'Тодорхойгүй / Unknown',
+  neutral:'Энгийн / Neutral', happy:'Баяртай / Happy', sad:'Гунигтай / Sad', angry:'Ууртай / Angry',
+  afraid:'Айсан / Afraid', surprised:'Гайхсан / Surprised', disgusted:'Жигшсэн / Disgusted',
+  confused:'Эргэлзсэн / Confused', curious:'Сониуч / Curious', sarcastic:'Ёжтой / Sarcastic',
+  normal:'Энгийн / Normal', whispering:'Шивнэх / Whispering', shouting:'Орилох / Shouting',
+  crying:'Уйлах / Crying', laughing:'Инээх / Laughing', singing:'Дуулах / Singing',
+  strained:'Хүч гаргасан / Strained', breathy:'Амьсгаатай / Breathy', hesitant:'Эргэлзсэн / Hesitant',
+  very_slow:'Маш удаан / Very slow', slow:'Удаан / Slow', fast:'Хурдан / Fast', very_fast:'Маш хурдан / Very fast',
+};
 const legacyValue = (turn: Turn, key: AnnotationKey) => String(turn[key] ?? '');
 const fieldState = (turn: Turn, key: AnnotationKey): FieldState => {
   const saved = turn.fieldStates?.[key];
@@ -299,7 +310,7 @@ export default function App() {
     if (!current) return;
     const mid = (current.start + current.end) / 2;
     const parts = project.turns.flatMap((t, i) => i === active
-      ? [{ ...t, end: mid, confirmed: false }, { ...t, id: t.id + '-b', start: mid, confirmed: false }]
+      ? [{ ...t, end: mid, confirmed: false, fieldStates: {} }, { ...t, id: t.id + '-b', start: mid, confirmed: false, fieldStates: {} }]
       : [t]);
     update({ turns: parts });
   };
@@ -307,7 +318,7 @@ export default function App() {
     const next = project.turns[active + 1];
     if (!current || !next) return;
     const merged = project.turns.filter((_, i) => i !== active + 1).map((t, i) => i === active
-      ? { ...t, end: next.end, en: [t.en, next.en].filter(Boolean).join(' '), mn: [t.mn, next.mn].filter(Boolean).join(' '), confirmed: false }
+      ? { ...t, end: next.end, en: [t.en, next.en].filter(Boolean).join(' '), mn: [t.mn, next.mn].filter(Boolean).join(' '), confirmed: false, fieldStates: {} }
       : t);
     update({ turns: merged });
   };
@@ -367,7 +378,7 @@ export default function App() {
             return <div className="field-review" key={key}>
               <label>{FIELD_LABELS[key]}
                 {key === 'speaker' ? <select value={current.speaker} onChange={e => setFieldValue(key,e.target.value)}><option value="">Сонгох / Select…</option>{project.speakers.map(s => <option key={s.id} value={s.id}>{s.name} ({s.id})</option>)}<option value="unknown">Тодорхойгүй / Unknown</option></select>
-                : options[key] ? <select value={legacyValue(current,key)} onChange={e => setFieldValue(key,e.target.value)}><option value="">Сонгох / Select…</option>{options[key].map(x => <option key={x} value={x}>{x}</option>)}</select>
+                : options[key] ? <select value={legacyValue(current,key)} onChange={e => setFieldValue(key,e.target.value)}><option value="">Сонгох / Select…</option>{options[key].map(x => <option key={x} value={x}>{OPTION_LABELS[x] || x}</option>)}</select>
                 : <input value={legacyValue(current,key)} onChange={e => setFieldValue(key,e.target.value)} placeholder="Утга оруулах / Enter value" />}
               </label>
               <small className="ai-proposal">AI санал / AI proposal: {state.aiProposal ?? 'Одоогоор санал байхгүй / No proposal yet'}</small>
