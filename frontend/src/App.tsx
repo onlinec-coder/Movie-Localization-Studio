@@ -176,6 +176,8 @@ export default function App() {
   };
   const confirmNext = () => {
     if (!current) return;
+    const complete = FIELD_KEYS.every(k => ['confirmed','corrected','not_applicable'].includes(fieldState(current,k).status));
+    if (!complete) { setStatus('Бүх талбарыг баталгаажуулах эсвэл хамаарахгүй гэж тэмдэглэнэ үү / Complete each field first'); return; }
     patchTurn({ confirmed: true });
     if (active < project.turns.length - 1) seekTurn(active + 1);
   };
@@ -276,8 +278,8 @@ export default function App() {
   };
 
   return <div className="app">
-    <header><div><b>🎬 Movie Localization Studio</b><small>LOCAL REVIEW WORKSPACE</small></div>
-      <span className="privacy">● LOCAL ONLY</span><button onClick={exportJson}>Export backup JSON</button>
+    <header><div><b>🎬 Movie Localization Studio</b><small>ДОТООД ШАЛГАЛТЫН ОРЧИН / LOCAL REVIEW WORKSPACE</small></div>
+      <span className="privacy">● ЗӨВХӨН ДОТООД / LOCAL ONLY</span><button onClick={exportJson}>Нөөц JSON татах / Export backup</button>
     </header>
     <main>
       <aside><h3>ТӨСӨЛ / PROJECT</h3>
@@ -310,15 +312,36 @@ export default function App() {
         <div className="subtitles"><small>ЯРИАНЫ ХЭСЭГ / TURN {project.turns.length ? active + 1 + ' / ' + project.turns.length : '—'}</small><p>{current?.en || 'Англи хадмал / English subtitle'}</p><strong>{current?.mn || 'Монгол хадмал'}</strong></div>
         <div className="nav"><button disabled={!active} onClick={() => seekTurn(active - 1)}>← Өмнөх / Previous</button><button disabled={active >= project.turns.length - 1} onClick={() => seekTurn(active + 1)}>Дараах / Next →</button></div>
       </section>
-      <aside className="inspector"><h3>TURN ANNOTATION</h3>
+      <aside className="inspector"><h3>ЯРИАНЫ ТЭМДЭГЛЭЛ / TURN ANNOTATION</h3>
         {current ? <>
-          <label>Speaker<select value={current.speaker} onChange={e => patchTurn({ speaker: e.target.value })}><option value="">Select…</option>{project.speakers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}<option value="unknown">Unknown</option></select></label>
-          <label>Role<select value={current.role} onChange={e => patchTurn({ role: e.target.value })}>{['dialogue', 'narration', 'inner_monologue', 'voice_over', 'unknown'].map(x => <option key={x} value={x}>{x}</option>)}</select></label>
-          {([['Emotion', 'emotion'], ['Delivery', 'delivery'], ['Speed', 'speed'], ['Voice characteristics', 'voice'], ['Emphasis words', 'emphasis'], ['Pauses / breaths', 'pauses'], ['Reviewer notes', 'notes']] as const).map(([label, key]) => <label key={key}>{label}<input value={current[key]} onChange={e => patchTurn({ [key]: e.target.value })} /></label>)}
-          <div className="actions"><button onClick={splitTurn}>Split turn</button><button onClick={mergeNext} disabled={active >= project.turns.length - 1}>Merge next</button></div>
-          <button className="confirm" onClick={confirmNext}>✓ Confirm & next <kbd>Enter</kbd></button>
-          <small>{current.confirmed ? 'Human confirmed' : 'Needs human review'}</small>
-        </> : <p>Import SRT files to start reviewing.</p>}
+          {FIELD_KEYS.map(key => {
+            const state = fieldState(current, key);
+            const options: Record<string, string[]> = {
+              role: ['dialogue','narration','inner_monologue','voice_over','unknown'],
+              emotion: ['neutral','happy','sad','angry','afraid','surprised','disgusted','confused','curious','sarcastic'],
+              delivery: ['normal','whispering','shouting','crying','laughing','singing','strained','breathy','hesitant'],
+              speed: ['very_slow','slow','normal','fast','very_fast'],
+            };
+            return <div className="field-review" key={key}>
+              <label>{FIELD_LABELS[key]}
+                {key === 'speaker' ? <select value={current.speaker} onChange={e => setFieldValue(key,e.target.value)}><option value="">Сонгох / Select…</option>{project.speakers.map(s => <option key={s.id} value={s.id}>{s.name} ({s.id})</option>)}<option value="unknown">Тодорхойгүй / Unknown</option></select>
+                : options[key] ? <select value={legacyValue(current,key)} onChange={e => setFieldValue(key,e.target.value)}><option value="">Сонгох / Select…</option>{options[key].map(x => <option key={x} value={x}>{x}</option>)}</select>
+                : <input value={legacyValue(current,key)} onChange={e => setFieldValue(key,e.target.value)} placeholder="Утга оруулах / Enter value" />}
+              </label>
+              <small className="ai-proposal">AI санал / AI proposal: {state.aiProposal ?? 'Одоогоор санал байхгүй / No proposal yet'}</small>
+              <div className="field-status">
+                <span className={`status-${state.status}`}>{STATUS_LABELS[state.status]}</span>
+                <button onClick={() => setFieldStatus(key,'confirmed')}>Зөвшөөрөх / Confirm</button>
+                <button onClick={() => setFieldStatus(key,'not_applicable')}>Хамаарахгүй / N/A</button>
+                <button onClick={() => setFieldStatus(key,'needs_review')}>Шалгах / Review</button>
+              </div>
+            </div>;
+          })}
+          <label>Тайлбар / Reviewer notes<input value={current.notes} onChange={e => patchTurn({ notes: e.target.value })} /></label>
+          <div className="actions"><button onClick={splitTurn}>Хуваах / Split</button><button onClick={mergeNext} disabled={active >= project.turns.length - 1}>Нэгтгэх / Merge</button></div>
+          <button className="confirm" onClick={confirmNext}>✓ Баталгаажуулаад дараах / Confirm & next <kbd>Enter</kbd></button>
+          <small>{current.confirmed ? 'Хүний баталгаажуулалт бүрэн / Fully human-confirmed' : 'Талбаруудыг тус тусад нь баталгаажуулна / Confirm fields individually'}</small>
+        </> : <p>Эхлэхийн тулд SRT файл оруулна уу / Import SRT files to start.</p>}
       </aside>
     </main>
     <footer><span>● {status}</span><span>{apiReady ? 'Дотоод автоматаар хадгалалт идэвхтэй · Cloud upload байхгүй' : 'Дотоод API холбогдоогүй · Cloud upload байхгүй'}</span></footer>
