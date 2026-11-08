@@ -27,6 +27,19 @@ Keep the backend running while reviewing. It stores project JSON and imported vi
 
 Open http://127.0.0.1:5173.
 
+## Automatic local test preset (Husbands)
+
+For a repeatable test workflow, the backend can load four files automatically on the first launch when no non-empty project is saved:
+
+1. Video
+2. English SRT
+3. Mongolian SRT
+4. Speaker assignments JSON
+
+Copy `backend/local_settings.example.json` to `backend/local_settings.json` and replace the four example paths with absolute paths to your local files. The private `local_settings.json` is ignored by Git and is never uploaded to the repository. The backend reads the files directly from this computer; the video is streamed from its original location and is not duplicated into the app's media folder.
+
+When the local project already contains turns or a video, the app restores that saved project instead of overwriting review progress with the test preset. To initialize the preset in a fresh test workspace, back up and move `backend/local_data/projects/local-project.json` out of the way before starting the app.
+
 ## Local save and resume
 
 - Project data is automatically saved after edits (short debounce) to `backend/local_data/projects/local-project.json`.
@@ -37,7 +50,7 @@ Open http://127.0.0.1:5173.
 
 ## Current review features
 
-- Import video, English SRT, and Mongolian SRT.
+- Import video, English SRT, Mongolian SRT, and speaker assignment JSON; optionally auto-load all four from a private local test preset.
 - View video and listen to its audio while reviewing both subtitle tracks.
 - Pause at the end of the active subtitle cue.
 - Assign speakers, including Unknown/off-screen.
