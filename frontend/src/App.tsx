@@ -46,6 +46,7 @@ export default function App() {
   const [apiReady, setApiReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [subtitleMode, setSubtitleMode] = useState<'off' | 'en' | 'mn' | 'both'>('both');
   const videoRef = useRef<HTMLVideoElement>(null);
   const current = project.turns[active];
   const confirmed = project.turns.filter(t => t.confirmed).length;
@@ -260,8 +261,18 @@ export default function App() {
       <section className="center">
         <div className="video">{videoSrc
           ? <video ref={videoRef} src={videoSrc} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
-          : <div className="placeholder">Import a movie to review video and sound together</div>}</div>
-        <div className="controls"><button onClick={() => seek(-3)}>−3s</button><button className="primary" onClick={togglePlay}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(3)}>+3s</button><span>J / L seek · Space play/pause</span></div>
+          : <div className="placeholder">Import a movie to review video and sound together</div>}
+          {current && subtitleMode !== 'off' && <div className="subtitle-overlay">
+            {(subtitleMode === 'en' || subtitleMode === 'both') && current.en && <p lang="en">{current.en}</p>}
+            {(subtitleMode === 'mn' || subtitleMode === 'both') && current.mn && <p lang="mn">{current.mn}</p>}
+          </div>}
+        </div>
+        <div className="controls"><button onClick={() => seek(-3)}>−3s</button><button className="primary" onClick={togglePlay}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(3)}>+3s</button>
+          <label className="subtitle-choice">Хадмал
+            <select value={subtitleMode} onChange={e => setSubtitleMode(e.target.value as 'off' | 'en' | 'mn' | 'both')}>
+              <option value="off">Унтраах</option><option value="en">English</option><option value="mn">Монгол</option><option value="both">Хоёуланг нь</option>
+            </select>
+          </label><span>J / L seek · Space play/pause</span></div>
         <div className="subtitles"><small>TURN {project.turns.length ? active + 1 + ' / ' + project.turns.length : '—'}</small><p>{current?.en || 'English subtitle'}</p><strong>{current?.mn || 'Монгол хадмал'}</strong></div>
         <div className="nav"><button disabled={!active} onClick={() => seekTurn(active - 1)}>← Previous</button><button disabled={active >= project.turns.length - 1} onClick={() => seekTurn(active + 1)}>Next →</button></div>
       </section>
