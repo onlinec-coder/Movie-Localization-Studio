@@ -13,3 +13,5 @@ backend/local_data/
 .vscode/
 .idea/
 .DS_Store
+
+backend/local_settings.json
