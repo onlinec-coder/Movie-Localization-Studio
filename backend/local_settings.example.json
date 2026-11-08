@@ -1,0 +1,9 @@
+{
+  "test_preset": {
+    "title": "Husbands",
+    "video": "C:\\PATH\\TO\\Husbands.mp4",
+    "english_srt": "C:\\PATH\\TO\\Husbands_ocr_en.srt",
+    "mongolian_srt": "C:\\PATH\\TO\\Husbands_mn_v3.srt",
+    "speaker_assignments": "C:\\PATH\\TO\\speaker_assignments.json"
+  }
+}
