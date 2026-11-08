@@ -63,6 +63,6 @@ The TURN ANNOTATION panel now reviews eight fields independently: speaker, role,
 
 The interface is bilingual (Mongolian / English), including field labels, status actions, and common annotation choices.
 
-Import `speaker_assignments.json` after importing the matching SRT. Assignments are matched by exact `subtitle_id`; unmatched IDs are not guessed. Existing human-confirmed or human-corrected speaker and role choices are protected from imported AI proposals. The other annotation dimensions remain awaiting review until an AI analysis provider is connected.
+Import `speaker_assignments.json` after importing the matching SRT. Assignments are matched by exact `subtitle_id`; the total cue counts and all IDs must match before import. A mismatch blocks the import rather than risking incorrect speaker assignments. Import the JSON immediately after importing the matching SRT and before splitting or merging turns. Existing human-confirmed or human-corrected speaker and role choices are protected from imported AI proposals. The other annotation dimensions remain awaiting review until an AI analysis provider is connected.
 
 See [Turn Annotation Data Model](docs/TURN_ANNOTATION_SCHEMA.md) for the JSON schema and migration behavior.
