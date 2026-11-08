@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
+type AnnotationStatus = 'ai_suggested' | 'confirmed' | 'corrected' | 'not_applicable' | 'needs_review';
+type AnnotationKey = 'speaker' | 'role' | 'emotion' | 'delivery' | 'speed' | 'voice' | 'emphasis' | 'pauses';
+type FieldState = { aiProposal: string | null; finalValue: string | null; status: AnnotationStatus };
 type Turn = {
   id: string; start: number; end: number; en: string; mn: string;
   speaker: string; role: string; emotion: string; delivery: string;
   speed: string; voice: string; emphasis: string; pauses: string;
-  notes: string; confirmed: boolean;
+  notes: string; confirmed: boolean; fieldStates?: Partial<Record<AnnotationKey, FieldState>>;
 };
 type Speaker = { id: string; name: string };
 type Project = {
@@ -12,6 +15,25 @@ type Project = {
   videoName: string; speakers: Speaker[]; turns: Turn[]; currentTurn: number;
 };
 const API = 'http://127.0.0.1:8000';
+const FIELD_LABELS: Record<AnnotationKey, string> = {
+  speaker: 'Яригч / Speaker', role: 'Дүрийн төрөл / Role',
+  emotion: 'Сэтгэл хөдлөл / Emotion', delivery: 'Ярианы хэлбэр / Delivery',
+  speed: 'Ярих хурд / Speaking speed', voice: 'Дуу хоолойн шинж / Voice characteristics',
+  emphasis: 'Онцолж хэлэх үг / Emphasis', pauses: 'Завсарлага, амьсгал / Pauses & breaths',
+};
+const STATUS_LABELS: Record<AnnotationStatus, string> = {
+  ai_suggested: 'AI санал / AI suggested', confirmed: 'Баталгаажсан / Confirmed',
+  corrected: 'Засварласан / Corrected', not_applicable: 'Хамаарахгүй / Not applicable',
+  needs_review: 'Шалгах шаардлагатай / Needs review',
+};
+const FIELD_KEYS: AnnotationKey[] = ['speaker','role','emotion','delivery','speed','voice','emphasis','pauses'];
+const legacyValue = (turn: Turn, key: AnnotationKey) => String(turn[key] ?? '');
+const fieldState = (turn: Turn, key: AnnotationKey): FieldState => {
+  const saved = turn.fieldStates?.[key];
+  if (saved) return saved;
+  const value = legacyValue(turn, key);
+  return { aiProposal: null, finalValue: value || null, status: turn.confirmed && value ? 'confirmed' : 'needs_review' };
+};
 const blankProject = (): Project => ({
   id: 'local-project', title: 'Untitled movie', updatedAt: new Date().toISOString(),
   videoUrl: '', videoName: '', speakers: [], turns: [], currentTurn: 0,
@@ -49,7 +71,7 @@ export default function App() {
   const [subtitleMode, setSubtitleMode] = useState<'off' | 'en' | 'mn' | 'both'>('both');
   const videoRef = useRef<HTMLVideoElement>(null);
   const current = project.turns[active];
-  const confirmed = project.turns.filter(t => t.confirmed).length;
+  const confirmed = project.turns.filter(t => FIELD_KEYS.every(k => ['confirmed','corrected','not_applicable'].includes(fieldState(t,k).status))).length;
 
   const update = (patch: Partial<Project>) => setProject(p => ({
     ...p, ...patch, updatedAt: new Date().toISOString(),
@@ -58,6 +80,18 @@ export default function App() {
     ...p, updatedAt: new Date().toISOString(),
     turns: p.turns.map((t, i) => i === active ? { ...t, ...patch } : t),
   }));
+  const setFieldStatus = (key: AnnotationKey, status: AnnotationStatus) => {
+    if (!current) return;
+    const previous = fieldState(current, key);
+    const nextState: FieldState = { ...previous, status, finalValue: status === 'not_applicable' ? null : previous.finalValue };
+    patchTurn({ fieldStates: { ...current.fieldStates, [key]: nextState }, confirmed: false });
+  };
+  const setFieldValue = (key: AnnotationKey, value: string) => {
+    if (!current) return;
+    const previous = fieldState(current, key);
+    const status: AnnotationStatus = previous.aiProposal !== null && value !== previous.aiProposal ? 'corrected' : 'needs_review';
+    patchTurn({ [key]: value, fieldStates: { ...current.fieldStates, [key]: { ...previous, finalValue: value || null, status } }, confirmed: false } as Partial<Turn>);
+  };
   const seekTurn = (index: number) => {
     if (index < 0 || index >= project.turns.length) return;
     setActive(index);
@@ -246,35 +280,35 @@ export default function App() {
       <span className="privacy">● LOCAL ONLY</span><button onClick={exportJson}>Export backup JSON</button>
     </header>
     <main>
-      <aside><h3>PROJECT</h3>
+      <aside><h3>ТӨСӨЛ / PROJECT</h3>
         <input value={project.title} onChange={e => update({ title: e.target.value })} />
-        <p>{project.turns.length} turns · {confirmed} confirmed</p>
-        <h3>SPEAKERS <button onClick={addSpeaker}>＋</button></h3>
+        <p>{project.turns.length} ярианы хэсэг / turns · {confirmed} бүрэн баталгаажсан / complete</p>
+        <h3>ЯРИГЧИД / SPEAKERS <button onClick={addSpeaker}>＋</button></h3>
         {project.speakers.map((s, i) => <button className="speaker" key={s.id} onClick={() => patchTurn({ speaker: s.id })}>{s.name} <kbd>{i + 1}</kbd></button>)}
         <button className="speaker" onClick={() => patchTurn({ speaker: 'unknown' })}>Unknown / off-screen <kbd>U</kbd></button>
-        <h3>IMPORT</h3>
-        <label className="file">Video (copied locally)<input type="file" accept="video/*" onChange={e => void importVideo(e.target.files?.[0])} /></label>
-        <label className="file">English SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'en')} /></label>
-        <label className="file">Mongolian SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'mn')} /></label>
+        <h3>ФАЙЛ ОРУУЛАХ / IMPORT</h3>
+        <label className="file">Видео / Video (дотоодод хадгална)<input type="file" accept="video/*" onChange={e => void importVideo(e.target.files?.[0])} /></label>
+        <label className="file">Англи хадмал / English SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'en')} /></label>
+        <label className="file">Монгол хадмал / Mongolian SRT<input type="file" accept=".srt" onChange={e => e.target.files?.[0] && void importSrt(e.target.files[0], 'mn')} /></label>
         <p className="muted">{project.videoName}</p>
       </aside>
       <section className="center">
         <div className="video">{videoSrc
           ? <video ref={videoRef} src={videoSrc} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
-          : <div className="placeholder">Import a movie to review video and sound together</div>}
+          : <div className="placeholder">Видео оруулж дүрс, дууг хамт шалгана уу / Import a movie to review video and sound</div>}
           {current && subtitleMode !== 'off' && <div className="subtitle-overlay">
             {(subtitleMode === 'en' || subtitleMode === 'both') && current.en && <p lang="en">{current.en}</p>}
             {(subtitleMode === 'mn' || subtitleMode === 'both') && current.mn && <p lang="mn">{current.mn}</p>}
           </div>}
         </div>
-        <div className="controls"><button onClick={() => seek(-3)}>−3s</button><button className="primary" onClick={togglePlay}>{playing ? 'Pause' : 'Play'}</button><button onClick={() => seek(3)}>+3s</button>
+        <div className="controls"><button onClick={() => seek(-3)}>−3s</button><button className="primary" onClick={togglePlay}>{playing ? 'Зогсоох / Pause' : 'Тоглуулах / Play'}</button><button onClick={() => seek(3)}>+3s</button>
           <label className="subtitle-choice">Хадмал
             <select value={subtitleMode} onChange={e => setSubtitleMode(e.target.value as 'off' | 'en' | 'mn' | 'both')}>
               <option value="off">Унтраах</option><option value="en">English</option><option value="mn">Монгол</option><option value="both">Хоёуланг нь</option>
             </select>
-          </label><span>J / L seek · Space play/pause</span></div>
-        <div className="subtitles"><small>TURN {project.turns.length ? active + 1 + ' / ' + project.turns.length : '—'}</small><p>{current?.en || 'English subtitle'}</p><strong>{current?.mn || 'Монгол хадмал'}</strong></div>
-        <div className="nav"><button disabled={!active} onClick={() => seekTurn(active - 1)}>← Previous</button><button disabled={active >= project.turns.length - 1} onClick={() => seekTurn(active + 1)}>Next →</button></div>
+          </label><span>J / L: шилжих · Space: тоглуулах/зогсоох</span></div>
+        <div className="subtitles"><small>ЯРИАНЫ ХЭСЭГ / TURN {project.turns.length ? active + 1 + ' / ' + project.turns.length : '—'}</small><p>{current?.en || 'Англи хадмал / English subtitle'}</p><strong>{current?.mn || 'Монгол хадмал'}</strong></div>
+        <div className="nav"><button disabled={!active} onClick={() => seekTurn(active - 1)}>← Өмнөх / Previous</button><button disabled={active >= project.turns.length - 1} onClick={() => seekTurn(active + 1)}>Дараах / Next →</button></div>
       </section>
       <aside className="inspector"><h3>TURN ANNOTATION</h3>
         {current ? <>
@@ -287,6 +321,6 @@ export default function App() {
         </> : <p>Import SRT files to start reviewing.</p>}
       </aside>
     </main>
-    <footer><span>● {status}</span><span>{apiReady ? 'Local autosave enabled · No cloud upload' : 'Local API not connected · No cloud upload'}</span></footer>
+    <footer><span>● {status}</span><span>{apiReady ? 'Дотоод автоматаар хадгалалт идэвхтэй · Cloud upload байхгүй' : 'Дотоод API холбогдоогүй · Cloud upload байхгүй'}</span></footer>
   </div>;
 }
